@@ -1,0 +1,311 @@
+﻿Program.Sub.Preflight.Start
+V.Global.sError.Declare(String)
+V.Global.sWC.Declare
+V.Global.sJob.Declare
+V.Global.sSuffix.Declare
+V.Global.sSeq.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+'TJS, August 2023
+'Customer:  Cardinal Systems
+'Quote: 14250
+'Updated project to make it compatible with the SFDC.NET (hook 50782).  Added hook 15935 (post-start job (multiple))
+	'Author: Arturo Almaguer
+	'Date: August 6th 2021
+	'Customer: Cardinal Systems, quote number 12838
+	'This program prints a custom label if WC and Op Code match with MM records, launched off hook 15952 Post-Start Job hook from the GUI.
+	
+	V.Local.sWOSplit.Declare
+
+	F.Intrinsic.Control.CallSub("CheckTable")
+	
+	F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+		F.Intrinsic.Control.Case(15952) ' Gui Post-start single job hook
+			V.Global.sWC.Set(V.Passed.000001)
+			V.Global.sJob.Set(V.Passed.009990)
+			V.Global.sSuffix.Set(V.Passed.009991)
+			V.Global.sSeq.Set(V.Passed.009992)
+		F.Intrinsic.Control.Case(15935) ' Gui Post-Start multiple Job selection Hook
+			V.Global.sWC.Set(V.Passed.009004)
+			V.Global.sJob.Set(V.Passed.009000)
+			V.Global.sSuffix.Set(V.Passed.009001)
+			V.Global.sSeq.Set(V.Passed.009002)
+		F.Intrinsic.Control.Case(50782) ' SFDC.NET Post-Start Job Hook
+			F.Intrinsic.String.Split(V.Passed.Job,"-",V.Local.sWOSplit)
+			V.Global.sWC.Set(V.Passed.Workcenter)
+			V.Global.sJob.Set(V.Local.sWOSplit(0).Trim)
+			V.Global.sSuffix.Set(V.Local.sWOSplit(1).Trim)
+			V.Global.sSeq.Set(V.Passed.Sequence)
+	F.Intrinsic.Control.EndSelect
+	
+	F.Intrinsic.Control.CallSub("GetData")
+	F.Intrinsic.Control.CallSub("CheckJSS")
+	
+	'Print label if value is blank, don't print if there is a value because it means the labels for that JSS have already been printed
+	F.Intrinsic.Control.If(V.Args.Flag, =, "")
+		F.Intrinsic.Control.CallSub("CheckMatch")
+	F.Intrinsic.Control.Else
+		F.Intrinsic.UI.Msgbox("WP to FG labels have already been printed for this job", "GCG 6458")
+	F.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+Program.Sub.CheckTable.Start
+'This subroutine checks if table exists in DB, creates it if it doesn't
+
+F.Intrinsic.Control.Try
+
+	V.Local.bExists.Declare(Boolean)
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	F.ODBC.Connection!Con.TableExists("GCG_6458_PRINTED", V.Local.bExists)
+		F.Intrinsic.Control.If(V.Local.bExists, =, False)
+			F.ODBC.Connection!Con.Execute("CREATE TABLE GCG_6458_PRINTED (JOB CHAR(6), SUFFIX CHAR(3), SEQUENCE CHAR(6), FLAG_PRINT BIT);")
+		F.Intrinsic.Control.EndIf
+	F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.CheckTable.End
+
+Program.Sub.GetData.Start
+'This subroutine gets the data from the selected record in the GUI
+F.Intrinsic.Control.Try
+
+	V.Local.iRowCount.Declare(Long)
+	V.Local.iCounter.Declare(Long)
+	V.Local.sTemp.Declare(String)
+	V.Local.sWO.Declare(String)
+	V.Local.sSQL.Declare
+	
+	'Setting passed variables
+
+	F.Intrinsic.String.Build("{0}-{1}", V.Global.sJob, V.Global.sSuffix, V.Local.sWO)
+	
+	'Creating dt
+	F.Intrinsic.Control.If(V.DataTable.dtWO.Exists)
+		F.Data.Datatable.Close("dtWO")
+	F.Intrinsic.Control.EndIf
+	F.Data.DataTable.Create("dtWO", True)
+	
+	'Adding columns to dt
+	F.Data.DataTable.AddColumn("dtWO", "WO", "String")
+	F.Data.DataTable.AddColumn("dtWO", "JOB", "String")
+	F.Data.DataTable.AddColumn("dtWO", "SUFFIX", "String")
+	F.Data.DataTable.AddColumn("dtWO", "SEQ", "String")
+	F.Data.DataTable.AddColumn("dtWO", "WC", "String")
+	F.Data.DataTable.AddColumn("dtWO", "PART", "String")
+	F.Data.DataTable.AddColumn("dtWO", "QTY", "Float")
+	F.Data.DataTable.AddColumn("dtWO", "LABEL_COPY", "Float")
+	
+	'TJS - Opting to pull the data from JOB_OPERATIONS instead of reading multiple BDFs for the different hooks.
+	F.ODBC.Connection!conts.OpenCompanyConnection
+		F.Intrinsic.String.Build("Select RTRIM(A.PART) as PART,B.UNITS_OPEN - B.UNITS_COMPLETE as UNITS_REM from V_JOB_HEADER A left join V_JOB_OPERATIONS B on A.JOB = B.JOB and A.SUFFIX = B.SUFFIX where A.JOB = '{0}' and A.SUFFIX = '{1}' and B.SEQ = '{2}'",V.Global.sJob,V.Global.sSuffix,V.Global.sSeq,V.Local.sSQL)
+		F.ODBC.Connection!conts.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+	F.ODBC.Connection!conts.Close
+	
+	F.Intrinsic.String.Split(V.Local.sSQL,"*!*",V.Local.sSQL)
+	
+	F.Data.DataTable.AddRow("dtWO", "WO", V.Local.sWO, "JOB", V.Global.sJob, "SUFFIX", V.Global.sSuffix, "SEQ", V.Global.sSeq, "WC", V.Global.sWC, "PART", V.Local.sSQL(0), "QTY", V.Local.sSQL(1), "LABEL_COPY", V.Local.sSQL(1)) 
+
+	'Loading BDF
+'	F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+'		F.Intrinsic.Control.Case(15952) ' Gui Post-Start Job Hook
+'			F.Intrinsic.BDF.Load("GAB-BDF", "AUX001")
+'			F.Intrinsic.BDF.ReadRowCount("GAB-BDF", V.Local.iRowCount)
+'			'Subtracting 1 to V.Local.iRowCount since For-loop considers 0 index
+'			F.Intrinsic.Math.Sub(V.Local.iRowCount, 1, V.Local.iRowCount)
+'			
+'			F.Intrinsic.Control.For(V.Local.iCounter, 0, V.Local.iRowCount, 1)
+'			
+'				F.Intrinsic.BDF.ReadRow("GAB-BDF", V.Local.iCounter, V.Local.sTemp)
+'				F.Intrinsic.String.Split(V.Local.sTemp, "|~|", V.Local.sTemp)
+'				
+'				'The next if statement will allow just to have one record in dt regardless if user multiselects jobs to start in the GUI
+'				F.Intrinsic.Control.If(V.Local.sTemp(0), =, "Y", "AND", V.Local.sTemp(1), =, V.Local.sWO, V.Local.sTemp(2), =, V.Global.sSeq)
+'					
+'					F.Data.DataTable.AddRow("dtWO", "WO", V.Local.sTemp(1), "JOB", V.Global.sJob, "SUFFIX", V.Global.sSuffix, "SEQ", V.Local.sTemp(2), "WC", V.Global.sWC, "PART", V.Local.sTemp(4), "QTY", V.Local.sTemp(6), "LABEL_COPY", V.Local.sTemp(6)) 
+'				
+'				F.Intrinsic.Control.EndIf
+'			F.Intrinsic.Control.Next(V.Local.iCounter)
+'		
+'	F.Intrinsic.Control.EndSelect
+	
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+
+Program.Sub.GetData.End
+
+Program.Sub.CheckJSS.Start
+'This subroutine validates that JSS don't exist in custom table, if it does, it means that the labels have already been printed
+
+F.Intrinsic.Control.Try
+
+	V.Local.sSQL.Declare(String)
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	F.Intrinsic.String.Build("select FLAG_PRINT from GCG_6458_PRINTED where JOB = '{0}' and SUFFIX = '{1}' and SEQUENCE = '{2}';", V.DataTable.dtWO(0).JOB!FieldVal, V.DataTable.dtWO(0).SUFFIX!FieldVal, V.DataTable.dtWO(0).SEQ!FieldVal, V.Local.sSQL)
+	F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sSQL)
+	F.ODBC.Connection!Con.Close
+	
+	'Return variable
+	F.Intrinsic.Variable.AddRV("Flag", V.Local.sSQL)
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.CheckJSS.End
+
+Program.Sub.CheckMatch.Start
+'This subroutine checks if the WC and OP Code from the GUI match a combination from the Maintenance Menu
+F.Intrinsic.Control.Try
+
+	V.Local.sSQL.Declare(String)
+	V.Local.sOpCode.Declare(String)
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	'Getting Op Code linked to the selected WO in the GUI
+	F.Intrinsic.String.Build("select OPERATION from V_JOB_OPERATIONS where JOB = '{0}' and SUFFIX = '{1}' and SEQ = '{2}'", V.Global.sJob, V.Global.sSuffix, V.Global.sSeq, V.Local.sSQL)
+	F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sOpCode)
+	
+	F.Intrinsic.Control.If(V.Local.sOpCode, <>, "")
+
+		'Checking if Op Code and WC match a combination from the MM
+		F.Intrinsic.String.Build("select * from GCG_6458 where MACHINE = '{0}' and OP_CODE = '{1}';", V.Global.sWC, V.Local.sOpCode, V.Local.sSQL)
+		F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sSQL)
+		
+		F.Intrinsic.Control.If(V.Local.sSQL, <>, "")
+			'There is a match in GCG_6458, so we proceed with this to print labels
+			F.Intrinsic.Control.CallSub("MoreData")
+			F.Intrinsic.Control.CallSub("RunPreprocessor")
+		F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+
+Program.Sub.CheckMatch.End
+
+Program.Sub.MoreData.Start
+'This subroutine loads more data to dt (specifically asked by the customer to be on the custom label)
+
+F.Intrinsic.Control.Try
+
+	V.Local.sSQL.Declare(String)
+	V.Local.sDescr.Declare(String)
+	V.Local.sSO.Declare(String)
+	V.Local.sUser2.Declare(String)
+	V.Local.sCustPO.Declare
+	
+	'Getting part's description
+	F.Intrinsic.String.Build("select DESCRIPTION from V_INVENTORY_MSTR where PART = '{0}';", V.DataTable.dtWO(0).PART!FieldValTrim, V.Local.sSQL)
+	F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sDescr)
+	
+	'Getting SO number
+	F.Intrinsic.String.Build("select RTRIM(SALES_ORDER) SALES_ORDER, RTRIM(CUSTOMER_PO) CUSTOMER_PO from V_JOB_HEADER where JOB = '{0}' and SUFFIX = '{1}';", V.DataTable.dtWO(0).JOB!FieldValTrim, V.DataTable.dtWO(0).SUFFIX!FieldValTrim, V.Local.sSQL)
+	
+	'F.Intrinsic.String.Build("select SALES_ORDER from V_JOB_HEADER where JOB = '{0}' and SUFFIX = '{1}';", V.Args.JOB, V.Args.SUFFIX, V.Local.sSQL)
+	F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sSQL)
+	
+	'Setting returned variables
+	F.Intrinsic.String.Split(V.Local.sSQL, "*!*", V.Local.sSQL)
+	V.Local.sSO.Set(V.Local.sSQL(0))
+	V.Local.sCustPO.Set(V.Local.sSQL(1))
+	
+	'Adding columns to dt
+	F.Data.DataTable.AddColumn("dtWO", "DESCR", String)
+	F.Data.DataTable.SetValue("dtWO", -1, "DESCR", V.Local.sDescr)
+	
+	F.Data.DataTable.AddColumn("dtWO", "SO", String)
+	F.Data.DataTable.AddColumn("dtWO", "OH_USER2", String)
+	
+	F.Data.DataTable.AddColumn("dtWO", "CUSTOMER_PO", String)
+	F.Data.DataTable.SetValue("dtWO", -1, "CUSTOMER_PO", V.Local.sCustPO)
+	
+	F.Intrinsic.Control.If(V.Local.sSO, =, "", "OR", V.Local.sSO, =, "0000000")
+	
+		F.Data.DataTable.SetValue("dtWO", -1, "SO", "")
+		F.Data.DataTable.SetValue("dtWO", -1, "OH_USER2", "")
+		
+	F.Intrinsic.Control.Else
+	
+		F.Data.DataTable.SetValue("dtWO", -1, "SO", V.Local.sSO)
+		'Getting User field 2 
+		F.Intrinsic.String.Build("select USER_2 from V_ORDER_HEADER where ORDER_NO = '{0}' and RECORD_NO = '  A';", V.Local.sSO, V.Local.sSQL)
+		F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sUser2)
+		F.Data.DataTable.SetValue("dtWO", -1, "OH_USER2", V.Local.sUser2)
+		
+	F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.MoreData.End
+
+Program.Sub.RunPreprocessor.Start
+'This subroutine has all the BI variables required
+
+F.Intrinsic.Control.Try
+
+	V.Local.iReportID.Declare(Long) 
+	V.Local.iBIRunID.Declare(Long)
+	V.Local.iBILogID.Declare(Long)
+	V.Local.sSQL.Declare(String)
+	
+	F.Global.BI.InitializeReport("", "GCG_6458.lab", V.Local.iReportID) 
+	F.Global.BI.GetRunID(V.Local.iBIRunID)
+	F.Global.BI.StartLogging(V.Local.iBIRunID, V.Local.iReportID, -1, "", V.Local.iBILogID)
+	
+	'Adding columns to dt
+	F.Data.DataTable.AddColumn("dtWO", "BIRUNID", Long)
+	F.Data.DataTable.SetValue("dtWO", -1, "BIRUNID", V.Local.iBIRunID)
+	F.Data.DataTable.AddExpressionColumn("dtWO", "QTY_ON_LABEL", Float, "QTY/LABEL_COPY")
+	
+	F.Global.BI.StopLogging(V.Local.iBILogID)
+	F.Global.BI.PrintCodesoftLabelFromDataTable(V.Local.iBIRunID,V.Local.iBILogID,"dtWO","", True)
+	
+	'Inserting record into custom table to set FLAG_PRINT to Yes
+	F.Intrinsic.String.Build("Insert into GCG_6458_PRINTED (JOB, SUFFIX, SEQUENCE, FLAG_PRINT) values('{0}','{1}','{2}','1');", V.DataTable.dtWO(0).JOB!FieldVal, V.DataTable.dtWO(0).SUFFIX!FieldVal, V.DataTable.dtWO(0).SEQ!FieldVal, V.Local.sSQL)
+	F.ODBC.Connection!Con.Execute(V.Local.sSQL)
+	
+F.Intrinsic.Control.Catch
+
+	F.Intrinsic.Control.CallSub(CatchError)
+	
+F.Intrinsic.Control.EndTry
+
+Program.Sub.RunPreprocessor.End
+
+Program.Sub.CatchError.Start
+F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}", V.Ambient.ScriptPath, V.Ambient.Newline, V.Ambient.SubroutineCalledFrom, V.Ambient.ErrorNumber, V.Ambient.ErrorDescription, V.Ambient.GABVersion, V.Global.sError) 
+F.Intrinsic.UI.Msgbox(V.Global.sError)
+F.Intrinsic.Control.End()
+Program.Sub.CatchError.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$tsmith$}$20230731132806743$}$xqPbj9atw05FglvzeFsZ9cqXP+qvG6tXNJPe5Q737U9n6A6JDrSnB9fdH8IjRSmGcD/K5cj4ZkM=
+Program.Sub.Comments.End
