@@ -1,0 +1,243 @@
+Program.Sub.ScreenSU.Start
+Gui.FormMM..Create
+Gui.FormMM..Caption("Maintenance Menu")
+Gui.FormMM..Size(7395,10440)
+Gui.FormMM..MinX(0)
+Gui.FormMM..MinY(0)
+Gui.FormMM..Position(0,0)
+Gui.FormMM..BackColor(-2147483633)
+Gui.FormMM..MousePointer(0)
+Gui.FormMM..Event(UnLoad,FormMM_UnLoad)
+Gui.FormMM.lbl1.Create(Label,"Select the Workcenter and OP Code you would like to pair:",True,5175,255,0,225,330,True,0,"Arial",9,-2147483633,0)
+Gui.FormMM.lbl1.FontStyle(True,False,False,False,False)
+Gui.FormMM.lbl2.Create(Label,"To delete an existing combination:",True,3210,255,0,960,9555,True,0,"Arial",9,-2147483633,0)
+Gui.FormMM.cmdDelete.Create(Button)
+Gui.FormMM.cmdDelete.Size(915,405)
+Gui.FormMM.cmdDelete.Position(4425,9420)
+Gui.FormMM.cmdDelete.Caption("Delete")
+Gui.FormMM.cmdDelete.Event(Click,cmdDelete_Click)
+Gui.FormMM.cmdWC.Create(Button)
+Gui.FormMM.cmdWC.Size(1215,375)
+Gui.FormMM.cmdWC.Position(720,750)
+Gui.FormMM.cmdWC.Caption("Workcenter")
+Gui.FormMM.cmdWC.Event(Click,cmdWC_Click)
+Gui.FormMM.cmdOPC.Create(Button)
+Gui.FormMM.cmdOPC.Size(1215,375)
+Gui.FormMM.cmdOPC.Position(720,1260)
+Gui.FormMM.cmdOPC.Caption("OP Code")
+Gui.FormMM.cmdOPC.Event(Click,cmdOPC_Click)
+Gui.FormMM.cmdSave.Create(Button)
+Gui.FormMM.cmdSave.Size(1065,525)
+Gui.FormMM.cmdSave.Position(5115,915)
+Gui.FormMM.cmdSave.Caption("Save")
+Gui.FormMM.cmdSave.Event(Click,cmdSave_Click)
+Gui.FormMM.gsgcMM.Create(GsGridControl)
+Gui.FormMM.gsgcMM.Size(6660,7455)
+Gui.FormMM.gsgcMM.Position(225,1845)
+Gui.FormMM.txtWC.Create(TextBox,"",True,1710,300,0,2250,780,True,0,"Arial",8,-2147483643,1)
+Gui.FormMM.txtOPC.Create(TextBox,"",True,1710,300,0,2250,1290,True,0,"Arial",8,-2147483643,1)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+V.Global.sSelectedWC.Declare(String)
+V.Global.sSelectedOPC.Declare(String)
+V.Global.sError.Declare(String)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author: Arturo Almaguer
+'Date: August 6th 2021
+'Customer: Cardinal Systems, quote number 12838
+'Maintenace Menu for ARC ID 6458
+
+F.Intrinsic.Control.CallSub(CheckTable)
+F.Intrinsic.Control.CallSub(LoadData)
+F.Intrinsic.Control.CallSub(LoadGrid)
+
+GUI.FormMM..Show
+
+Program.Sub.Main.End
+
+Program.Sub.FormMM_UnLoad.Start
+F.Intrinsic.Control.End()
+
+Program.Sub.FormMM_UnLoad.End
+
+Program.Sub.cmdWC_Click.Start
+V.Local.sSelectedWC.Declare(String)
+V.Local.sTitles.Declare(String)
+V.Local.iWidths.Declare(Long)
+
+F.Intrinsic.String.Split("Workcenter*!*Description","*!*",V.Local.sTitles)
+F.Intrinsic.String.Split("100*!*300","*!*",V.Local.iWidths)
+
+F.ODBC.Connection!Con.OpenCompanyConnection
+F.Intrinsic.UI.Browser("Select a WC","Con","select RTRIM(MACHINE) MACHINE, RTRIM(WC_NAME) WC_NAME from V_WORKCENTERS;", V.Local.sTitles, V.Local.iWidths, V.Local.sSelectedWC)
+
+F.Intrinsic.Control.If(V.Local.sSelectedWC.IsNotCancel)
+
+	F.Intrinsic.String.Split(V.Local.sSelectedWC, "*!*", V.Local.sSelectedWC) 
+	GUI.FormMM.txtWC.Text(V.Local.sSelectedWC(0))
+	V.Global.sSelectedWC.Set(V.Local.sSelectedWC(0))
+	
+F.Intrinsic.Control.Else
+
+	F.Intrinsic.UI.Msgbox("Please choose a workcenter to continue.", "Workcenter Not Selected")
+
+F.Intrinsic.Control.EndIf
+F.ODBC.Connection!Con.Close
+
+Program.Sub.cmdWC_Click.End
+
+Program.Sub.cmdOPC_Click.Start
+V.Local.sSelectedOPC.Declare(String)
+V.Local.sTitles.Declare(String)
+V.Local.iWidths.Declare(Long)
+
+F.Intrinsic.String.Split("Op Code*!*Description*!*Workcenter*!*Code Type","*!*",V.Local.sTitles)
+F.Intrinsic.String.Split("100*!*300*!*100*!*100","*!*",V.Local.iWidths)
+
+F.ODBC.Connection!Con.OpenCompanyConnection
+F.Intrinsic.UI.Browser("Select an OP Code","Con","select RTRIM(OPERATION) OPERATION, RTRIM(DESCRIPTION) DESCRIPTION, RTRIM(MACHINE) MACHINE, case when LMO = 'L' then 'Labor' when LMO = 'M' then 'Material' when LMO = 'O' then 'Outside' else 'Comment' end as LMO from V_OP_CODES;", V.Local.sTitles, V.Local.iWidths, V.Local.sSelectedOPC)
+F.Intrinsic.Control.If(V.Local.sSelectedOPC.IsNotCancel)
+
+	F.Intrinsic.String.Split(V.Local.sSelectedOPC, "*!*", V.Local.sSelectedOPC) 
+	GUI.FormMM.txtOPC.Text(V.Local.sSelectedOPC(0))
+	V.Global.sSelectedOPC.Set(V.Local.sSelectedOPC(0))
+	
+F.Intrinsic.Control.Else
+
+	F.Intrinsic.UI.Msgbox("Please choose an OP Code to continue.", "OP Code Not Selected")
+
+F.Intrinsic.Control.EndIf
+F.ODBC.Connection!Con.Close
+Program.Sub.cmdOPC_Click.End
+
+Program.Sub.cmdSave_Click.Start
+V.Local.iID.Declare(Long)
+V.Local.sSQL.Declare(String)
+
+F.ODBC.Connection!Con.OpenCompanyConnection
+F.ODBC.Connection!Con.ExecuteAndReturn("select top 1 PAIRED_ID from GCG_6458 order by PAIRED_ID DESC", V.Local.iID)
+
+'This part was added just for the first record that will be created
+F.Intrinsic.Control.If(V.Local.iID, =, "")
+
+	V.Local.iID.Set(1)
+
+F.Intrinsic.Control.Else
+
+	F.Intrinsic.Math.Add(V.Local.iID, 1, V.Local.iID)
+
+F.Intrinsic.Control.EndIf
+
+'Checking if combination already exists in custom table
+F.Intrinsic.String.Build("select * from GCG_6458 where MACHINE = '{0}' and OP_CODE = '{1}';", V.Global.sSelectedWC, V.Global.sSelectedOPC, V.Local.sSQL)
+F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sSQL)
+
+F.Intrinsic.Control.If(V.Local.sSQL, =, "")
+	
+	F.Intrinsic.String.Build("insert into GCG_6458(PAIRED_ID, MACHINE, OP_CODE) values('{0}','{1}','{2}');", V.Local.iID, V.Global.sSelectedWC, V.Global.sSelectedOPC, V.Local.sSQL)
+	F.Intrinsic.UI.Msgbox("Combination has been saved")
+	
+F.Intrinsic.Control.Else
+	
+	F.Intrinsic.UI.Msgbox("Combination already exists")
+	
+F.Intrinsic.Control.EndIf
+
+F.ODBC.Connection!Con.Execute(V.Local.sSQL)
+F.ODBC.Connection!Con.Close
+
+'Clearing textboxes
+GUI.FormMM.txtWC.Text("")
+GUI.FormMM.txtOPC.Text("")
+
+'Loading data again to gv
+F.Intrinsic.Control.CallSub(LoadData)
+F.Intrinsic.Control.CallSub(LoadGrid)
+Program.Sub.cmdSave_Click.End
+
+Program.Sub.cmdDelete_Click.Start
+'Subroutine triggered when user clicks on Delete button
+
+V.Local.sReturn.Declare(String)
+V.Local.sSQL.Declare(String)
+
+F.Intrinsic.UI.Inputbox("Delete combination", "Select the combination's ID you want to delete", "", V.Local.sReturn)
+
+F.Intrinsic.Control.If(V.Local.sReturn.IsNotCancel)
+
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	F.Intrinsic.String.Build("select * from GCG_6458 where PAIRED_ID = '{0}';", V.Local.sReturn, V.Local.sSQL)
+	F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sSQL)
+	
+	F.Intrinsic.Control.If(V.Local.sSQL, <>, "")
+			
+		F.Intrinsic.String.Build("delete from GCG_6458 where PAIRED_ID = '{0}';", V.Local.sReturn, V.Local.sSQL)
+		F.ODBC.Connection!Con.Execute(V.Local.sSQL)
+		F.Intrinsic.UI.Msgbox("Combination has been deleted")
+			
+	F.Intrinsic.Control.Else
+			
+		F.Intrinsic.UI.Msgbox("Paired ID doesn't exist")
+			
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.EndIf
+
+'Loading data again to gv
+F.Intrinsic.Control.CallSub(LoadData)
+F.Intrinsic.Control.CallSub(LoadGrid)
+Program.Sub.cmdDelete_Click.End
+
+Program.Sub.CheckTable.Start
+V.Local.bExists.Declare(Boolean)
+
+F.ODBC.Connection!Con.OpenCompanyConnection
+F.ODBC.Connection!Con.TableExists("GCG_6458", V.Local.bExists)
+	F.Intrinsic.Control.If(V.Local.bExists, =, False)
+		F.ODBC.Connection!Con.Execute("CREATE TABLE GCG_6458 (PAIRED_ID INTEGER, MACHINE CHAR(20), OP_CODE CHAR(6));")
+	F.Intrinsic.Control.EndIf
+F.ODBC.Connection!Con.Close
+Program.Sub.CheckTable.End
+
+Program.Sub.LoadData.Start
+'To check if datatables already exists
+F.Intrinsic.Control.If(V.DataTable.dtPairedValues.Exists)
+	F.Data.DataTable.Close("dtPairedValues")
+F.Intrinsic.Control.EndIf
+
+F.ODBC.Connection!Con.OpenCompanyConnection
+F.Data.DataTable.CreateFromSQL("dtPairedValues", "Con", "select * from GCG_6458 order by PAIRED_ID", True)
+F.ODBC.Connection!Con.Close
+Program.Sub.LoadData.End
+
+Program.Sub.LoadGrid.Start
+GUI.FormMM.gsgcMM.AddGridviewFromDatatable("gvPairedValues","dtPairedValues")
+
+'GUI.FormMM.gsgcMM.SetGridviewProperty("gvPairedValues", V.Enum.GridViewPropertyNames!RowAutoHeight, True)
+'GUI.FormMM.gsgcMM.SetGridviewProperty("gvPairedValues", V.Enum.GridViewPropertyNames!Editable, False)
+'GUI.FormMM.gsgcMM.SetGridviewProperty("gvPairedValues", V.Enum.GridViewPropertyNames!ReadOnly, True)
+GUI.FormMM.gsgcMM.SetGridViewProperty("gvPairedValues", "Editable", False)
+GUI.FormMM.gsgcMM.SetGridViewProperty("gvPairedValues","ReadOnly", True)
+		
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "PAIRED_ID", "Caption", "ID")
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "MACHINE", "Caption", "Workcenter")
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "OP_CODE", "Caption", "OP Code")
+
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "PAIRED_ID", "HeaderFontBold", True)
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "MACHINE", "HeaderFontBold", True)
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "OP_CODE", "HeaderFontBold", True)
+
+GUI.FormMM.gsgcMM.SetColumnProperty("gvPairedValues", "PAIRED_ID", "MaxWidth", 80)
+
+GUI.FormMM.gsgcMM.MainView("gvPairedValues") 
+Program.Sub.LoadGrid.End
+
+Program.Sub.CatchError.Start
+F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}", V.Ambient.ScriptPath, V.Ambient.Newline, V.Ambient.SubroutineCalledFrom, V.Ambient.ErrorNumber, V.Ambient.ErrorDescription, V.Ambient.GABVersion, V.Global.sError) 
+F.Intrinsic.UI.Msgbox(V.Global.sError)
+F.Intrinsic.Control.End()
+Program.Sub.CatchError.End
